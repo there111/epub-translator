@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EPUB 翻译 — 日文小说 → 中文</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;min-height:100vh}
+.container{max-width:640px;margin:0 auto;padding:16px}
+h1{text-align:center;font-size:20px;margin:16px 0 4px}
+.subtitle{text-align:center;font-size:12px;color:#999;margin-bottom:16px}
+
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:16px;margin-bottom:12px}
+
+/* Upload */
+.drop-zone{border:2px dashed #ccc;border-radius:12px;padding:40px 16px;text-align:center;cursor:pointer;transition:border-color .2s}
+.drop-zone:hover,.drop-zone.dragover{border-color:#89b4fa}
+.drop-zone svg{width:40px;height:40px;color:#bbb;margin-bottom:8px}
+.drop-zone .title{font-size:15px;color:#666}
+.drop-zone .hint{font-size:11px;color:#aaa;margin-top:4px}
+
+/* Book info */
+.book-info{display:none}
+.book-info .row{display:flex;align-items:center;gap:12px}
+.book-info .cover{width:48px;height:64px;background:#eee;border-radius:4px;object-fit:cover;flex-shrink:0}
+.book-info .meta{flex:1;min-width:0}
+.book-info .meta .title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book-info .meta .detail{font-size:11px;color:#888;margin-top:2px}
+
+/* Config */
+.config-toggle{font-size:12px;color:#89b4fa;cursor:pointer;user-select:none;margin-bottom:8px;display:inline-block}
+.config-toggle:hover{text-decoration:underline}
+.config-body{display:none}
+.config-body.show{display:block}
+.config-row{margin-bottom:8px}
+.config-row label{display:block;font-size:11px;color:#888;margin-bottom:2px}
+.config-row input{width:100%;padding:8px 10px;font-size:13px;border:1px solid #ddd;border-radius:6px;outline:none;transition:border-color .2s}
+.config-row input:focus{border-color:#89b4fa}
+.preset-row{display:flex;gap:6px;margin-bottom:8px}
+.preset-btn{flex:1;padding:6px;font-size:12px;border:1px solid #ccc;border-radius:6px;background:#f0f0f0;cursor:pointer;text-align:center;transition:all .15s}
+.preset-btn:hover{background:#e0e0e0}
+.preset-btn.active{background:#89b4fa;color:#fff;border-color:#89b4fa}
+
+/* Buttons */
+.btn-row{display:flex;gap:8px;margin-top:12px}
+.btn{flex:1;padding:10px 16px;font-size:14px;font-weight:600;border:none;border-radius:8px;cursor:pointer;transition:opacity .2s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#89b4fa;color:#1e1e2e}
+.btn-outline{background:#fff;color:#89b4fa;border:2px solid #89b4fa}
+.btn-danger{background:#fff;color:#e64553;border:2px solid #e64553}
+
+/* Progress */
+.progress{display:none;margin-top:12px}
+.progress-bar{height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.progress-bar .fill{height:100%;background:#89b4fa;border-radius:3px;transition:width .3s;width:0%}
+.progress-text{font-size:12px;color:#666;display:flex;justify-content:space-between}
+
+/* Log */
+.log{background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:10px 12px;max-height:300px;overflow-y:auto;font:12px/1.6 "SF Mono","Cascadia Code",monospace}
+.log .entry{margin-bottom:2px}
+.log .entry.success{color:#a6e3a1}
+.log .entry.error{color:#f38ba8}
+.log .entry.warn{color:#f9e2af}
+.log .entry.info{color:#89b4fa}
+
+/* Hidden */
+.hidden{display:none!important}
+
+/* Mobile tweaks */
+@media(max-width:480px){
+  .container{padding:8px}
+  .card{padding:12px;border-radius:10px}
+  .drop-zone{padding:30px 12px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📖 EPUB 翻译</h1>
+  <p class="subtitle">日文小说 → 中文 · 支持 EPUB/TXT · API Key 不上传服务器</p>
+
+  <!-- Upload -->
+  <div class="card" id="uploadCard">
+    <div class="drop-zone" id="dropZone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+      <div class="title">拖拽 EPUB/TXT 文件到此处</div>
+      <div class="hint">或点击选择文件 · 支持 .epub / .txt</div>
+    </div>
+    <input type="file" accept=".epub,.txt" id="fileInput" style="display:none">
+  </div>
+
+  <!-- Book Info -->
+  <div class="card book-info" id="bookCard">
+    <div class="row">
+      <canvas class="cover" id="coverCanvas" width="48" height="64"></canvas>
+      <div class="meta">
+        <div class="title" id="bookTitle">-</div>
+        <div class="detail" id="bookMeta">-</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config -->
+  <div class="card" id="configCard">
+    <div class="config-toggle" id="configToggle">⚙ API 设置</div>
+    <div class="config-body show" id="configBody">
+      <div class="preset-row">
+        <button class="preset-btn" data-id="agnes">Agnes</button>
+        <button class="preset-btn" data-id="deepseek">DeepSeek</button>
+        <button class="preset-btn" data-id="openrouter">OpenRouter</button>
+        <button class="preset-btn" data-id="glm52">GLM5.2</button>
+        <button class="preset-btn" data-id="minicpm">MiniCPM</button>
+      </div>
+      <div class="config-row">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-...（多个key用逗号分隔）">
+      </div>
+      <div class="config-row">
+        <label>端点</label>
+        <input type="text" id="apiEndpoint" placeholder="https://api.deepseek.com/v1/chat/completions">
+      </div>
+      <div class="config-row">
+        <label>模型</label>
+        <input type="text" id="apiModel" placeholder="deepseek-v4-flash">
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card" id="actionCard">
+    <div class="btn-row">
+      <button class="btn btn-primary" id="translateBtn" disabled>🌐 开始翻译</button>
+      <button class="btn btn-outline" id="downloadBtn" disabled>📥 下载 EPUB</button>
+    </div>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn btn-danger hidden" id="abortBtn">⏹ 停止翻译</button>
+      <button class="btn btn-outline hidden" id="repairBtn">🔧 补翻日文残留</button>
+    </div>
+    <div class="progress" id="progress">
+      <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+      <div class="progress-text"><span id="progressLabel">就绪</span><span id="progressPct">0%</span></div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card" id="logCard">
+    <div class="log" id="log"><div class="entry info">等待上传 EPUB 文件...</div></div>
+  </div>
+</div>
+
+<script>
+// ==================== App State ====================
+const App = {
+  state: 'idle', // idle | parsing | ready | translating | done
+  epubData: null, // { title, author, description, chapters:[{title,content}], coverBytes, coverExt }
+  config: null,
+  done: 0, total: 0, abort: false, translatedChapters: null, translatedDescription: null,
+
+  setState(s) {
+    App.state = s;
+    document.getElementById('translateBtn').disabled = (s !== 'ready');
+    document.getElementById('downloadBtn').disabled = (s !== 'done');
+    document.getElementById('abortBtn').classList.toggle('hidden', s !== 'translating');
+    document.getElementById('repairBtn').classList.toggle('hidden', s !== 'ready' && s !== 'done');
+    if (s === 'translating') {
+      document.getElementById('progress').style.display = 'block';
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('progressPct').textContent = '0%';
+      document.getElementById('progressLabel').textContent = '准备中...';
+    }
+  },
+
+  log(msg, cls) {
+    var el = document.getElementById('log');
+    var t = new Date().toLocaleTimeString();
+    el.innerHTML += '<div class="entry ' + (cls || '') + '">[' + t + '] ' + msg + '</div>';
+    el.scrollTop = el.scrollHeight;
+  },
+
+  updateProgress(done, total, title) {
+    App.done = done; App.total = total;
+    var pct = total > 0 ? Math.round(done / total * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('progressLabel').textContent = done + '/' + total + (title ? ' · ' + title : '');
+  },
+
+  sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+};
+
+// ==================== ConfigManager ====================
+var ConfigManager = {
+  PRESETS: {
+    agnes: { endpoint: 'https://apihub.agnes-ai.com/v1/chat/completions', model: 'agnes-2.0-flash' },
+    deepseek: { endpoint: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-v4-flash' },
+    openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+    glm52: { endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'z-ai/glm-5.2:free' },
+    minicpm: { endpoint: 'https://api.modelbest.cn/v1/chat/completions', model: 'MiniCPM-O-4.5-9B', apiKey: 'sk-live-kmwPsO1yz9kJfbp8c6az72I-BjfZBX-5V5CmI9yTsXw' }
+  },
+
+  // 各预设用户自定义 key，优先于 PRESETS 内置 apiKey
+  _store: { keys: {} },
+
+  _keyFor: function(id) {
+    var custom = ConfigManager._store.keys[id];
+    if (custom) return custom;
+    return ConfigManager.PRESETS[id].apiKey || '';
+  },
+
+  load: function() {
+    try {
+      var raw = localStorage.getItem('epub_translator_config');
+      if (raw) {
+        var c = JSON.parse(raw);
+        ConfigManager._store.keys = c.keys || {};
+        // 旧版单 key 配置迁移：塞给上次使用的预设
+        if (c.apiKey && !c.keys) ConfigManager._store.keys[c.lastPreset || 'deepseek'] = c.apiKey;
+        var last = c.lastPreset || 'deepseek';
+        document.getElementById('apiKey').value = ConfigManager._keyFor(last);
+        document.getElementById('apiEndpoint').value = c.apiEndpoint || ConfigManager.PRESETS.deepseek.endpoint;
+        document.getElementById('apiModel').value = c.model || ConfigManager.PRESETS.deepseek.model;
+        this._highlightPreset(last);
+        return;
+      }
+    } catch(e) {}
+    // defaults
+    document.getElementById('apiEndpoint').value = ConfigManager.PRESETS.deepseek.endpoint;
+    document.getElementById('apiModel').value = ConfigManager.PRESETS.deepseek.model;
+    this._highlightPreset('deepseek');
+  },
+
+  save: function() {
+    // 当前预设的 key 记到该预设名下，各预设互不干扰
+    ConfigManager._store.keys[ConfigManager._activePreset] = document.getElementById('apiKey').value.trim();
+    var c = {
+      keys: ConfigManager._store.keys,
+      apiEndpoint: document.getElementById('apiEndpoint').value.trim(),
+      model: document.getElementById('apiModel').value.trim(),
+      lastPreset: ConfigManager._activePreset || 'deepseek'
+    };
+    try { localStorage.setItem('epub_translator_config', JSON.stringify(c)); } catch(e) {}
+    App.log('✅ 配置已保存到本地', 'success');
+  },
+
+  get: function() {
+    return {
+      apiKey: document.getElementById('apiKey').value.trim(),
+      apiEndpoint: document.getElementById('apiEndpoint').value.trim(),
+      model: document.getElementById('apiModel').value.trim()
+    };
+  },
+
+  applyPreset: function(id) {
+    var p = ConfigManager.PRESETS[id];
+    if (!p) return;
+    // 先把当前输入框的 key 记到当前预设，再切到目标预设的 key
+    if (ConfigManager._activePreset) {
+      ConfigManager._store.keys[ConfigManager._activePreset] = document.getElementById('apiKey').value.trim();
+    }
+    document.getElementById('apiKey').value = ConfigManager._keyFor(id);
+    document.getElementById('apiEndpoint').value = p.endpoint;
+    document.getElementById('apiModel').value = p.model;
+    this._highlightPreset(id);
+  },
+
+  _activePreset: 'deepseek',
+  _highlightPreset: function(id) {
+    ConfigManager._activePreset = id;
+    document.querySelectorAll('.preset-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.id === id);
+    });
+  }
+};
+
+// ==================== EpubRebuilder (from background.js) ====================
+var EpubRebuilder = (function() {
+  var crc32Table = new Int32Array(256);
+  for (var i = 0; i < 256; i++) {
+    var c = i;
+    for (var j = 0; j < 8; j++) { c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+    crc32Table[i] = c;
+  }
+
+  function crc32(data) {
+    var crc = -1;
+    for (var i = 0; i < data.length; i++) { crc = (crc >>> 8) ^ crc32Table[(crc ^ data[i]) & 0xFF]; }
+    return (crc ^ -1) >>> 0;
+  }
+
+  function createZip(files) {
+    var encoder = new TextEncoder();
+    var localHeaders = [], centralHeaders = [], fileData = [], offset = 0;
+    var now = new Date();
+    var dosTime = (now.getSeconds() >> 1) | (now.getMinutes() << 5) | (now.getHours() << 11);
+    var dosDate = now.getDate() | ((now.getMonth() + 1) << 5) | ((now.getFullYear() - 1980) << 9);
+
+    for (var fi = 0; fi < files.length; fi++) {
+      var file = files[fi];
+      var nameBytes = encoder.encode(file.name);
+      var data = file.data;
+      var crc = crc32(data);
+
+      var lh = new Uint8Array(30 + nameBytes.length);
+      var lv = new DataView(lh.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint16(6, 0x0800, true);
+      lv.setUint16(8, 0, true);
+      lv.setUint16(10, dosTime, true);
+      lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lv.setUint16(28, 0, true);
+      lh.set(nameBytes, 30);
+      localHeaders.push(lh); fileData.push(data);
+
+      var ce = new Uint8Array(46 + nameBytes.length);
+      var cv = new DataView(ce.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint16(12, dosTime, true);
+      cv.setUint16(14, dosDate, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true);
+      cv.setUint32(24, data.length, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint16(30, 0, true);
+      cv.setUint16(32, 0, true);
+      cv.setUint16(34, 0, true);
+      cv.setUint16(36, 0, true);
+      cv.setUint32(38, 0, true);
+      cv.setUint32(42, offset, true);
+      ce.set(nameBytes, 46);
+      centralHeaders.push(ce);
+      offset += lh.length + data.length;
+    }
+
+    var eocd = new Uint8Array(22);
+    var ev = new DataView(eocd.buffer);
+    var cdSize = centralHeaders.reduce(function(s, c) { return s + c.length; }, 0);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(4, 0, true); ev.setUint16(6, 0, true);
+    ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+    ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+    ev.setUint16(20, 0, true);
+
+    var totalSize = offset + cdSize + 22;
+    var zip = new Uint8Array(totalSize);
+    var pos = 0;
+    for (var i = 0; i < files.length; i++) { zip.set(localHeaders[i], pos); pos += localHeaders[i].length; zip.set(fileData[i], pos); pos += fileData[i].length; }
+    for (var ci = 0; ci < centralHeaders.length; ci++) { zip.set(centralHeaders[ci], pos); pos += centralHeaders[ci].length; }
+    zip.set(eocd, pos);
+    return zip;
+  }
+
+  function xmlEscape(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function generateEpub(bookTitle, author, description, chapters, coverBytes, coverExt) {
+    var encoder = new TextEncoder();
+    var now = new Date();
+    var dcDate = now.toISOString().split('T')[0];
+    var uuid = 'urn:uuid:' + crypto.randomUUID();
+
+    var chapterFiles = chapters.map(function(ch, i) {
+      var num = String(i + 1).padStart(3, '0');
+      var id = 'chapter-' + num;
+      var title = xmlEscape(ch.title);
+      var bodyHtml = xmlEscape(ch.content || '').replace(/\n/g, '<br/>\n');
+      return {
+        id: id, title: ch.title, path: 'OEBPS/' + id + '.xhtml',
+        content: '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml">\n<head><title>' + title + '</title></head>\n<body><h2>' + title + '</h2>\n' + bodyHtml + '\n</body>\n</html>'
+      };
+    });
+
+    var hasCover = !!coverBytes;
+    var coverImgFile = hasCover ? 'cover.' + coverExt : '';
+    var coverMime = coverExt === 'png' ? 'image/png' : coverExt === 'webp' ? 'image/webp' : 'image/jpeg';
+    var coverTitle = xmlEscape(bookTitle);
+    var coverContent = '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml">\n<head><title>' + coverTitle + '</title></head>\n<body style="text-align:center;padding-top:' + (hasCover ? '0' : '30%') + ';">\n' + (hasCover ? '<img src="' + coverImgFile + '" alt="cover" style="max-width:100%;height:auto;"/>' : '<h1>' + coverTitle + '</h1>\n' + (author ? '<p>作者：' + xmlEscape(author) + '</p>' : '')) + (description ? '\n<p style="max-width:80%;margin:20px auto;line-height:1.6;text-align:left;">' + xmlEscape(description.substring(0,1000)).replace(/\n/g,'<br/>\n') + '</p>' : '') + '\n</body>\n</html>';
+
+    var manifestItems = chapterFiles.map(function(ch) { return '<item id="' + ch.id + '" href="' + ch.id + '.xhtml" media-type="application/xhtml+xml"/>'; }).join('\n    ');
+    var spineItems = chapterFiles.map(function(ch) { return '<itemref idref="' + ch.id + '"/>'; }).join('\n    ');
+
+    var opf = '<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id" version="2.0">\n<metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">\n<dc:title>' + xmlEscape(bookTitle) + '</dc:title>\n<dc:creator>' + xmlEscape(author || 'Unknown') + '</dc:creator>\n' + (description ? '<dc:description>' + xmlEscape(description.substring(0,500)) + '</dc:description>\n' : '') + '<dc:language>zh-CN</dc:language>\n<dc:date>' + dcDate + '</dc:date>\n<dc:identifier id="book-id">' + uuid + '</dc:identifier>\n' + (hasCover ? '<meta name="cover" content="cover-img"/>\n' : '') + '</metadata>\n<manifest>\n<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n' + (hasCover ? '<item id="cover-img" href="' + coverImgFile + '" media-type="' + coverMime + '"/>\n' : '') + manifestItems + '\n</manifest>\n<spine toc="ncx">\n<itemref idref="cover"/>\n' + spineItems + '\n</spine>\n</package>';
+
+    var ncxPoints = chapterFiles.map(function(ch, i) { return '<navPoint id="nav-' + ch.id + '" playOrder="' + (i + 1) + '"><navLabel><text>' + xmlEscape(ch.title) + '</text></navLabel><content src="' + ch.id + '.xhtml"/></navPoint>'; }).join('\n    ');
+    var ncx = '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n<head><meta name="dtb:uid" content="' + xmlEscape(uuid) + '"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head>\n<docTitle><text>' + xmlEscape(bookTitle) + '</text></docTitle>\n<navMap>\n' + ncxPoints + '\n</navMap>\n</ncx>';
+
+    var container = '<?xml version="1.0" encoding="utf-8"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>\n</container>';
+
+    var files = [
+      { name: 'mimetype', data: encoder.encode('application/epub+zip') },
+      { name: 'META-INF/container.xml', data: encoder.encode(container) },
+      { name: 'OEBPS/content.opf', data: encoder.encode(opf) },
+      { name: 'OEBPS/toc.ncx', data: encoder.encode(ncx) },
+      { name: 'OEBPS/cover.xhtml', data: encoder.encode(coverContent) }
+    ];
+    if (hasCover) files.push({ name: 'OEBPS/' + coverImgFile, data: coverBytes });
+    chapterFiles.forEach(function(ch) { files.push({ name: ch.path, data: encoder.encode(ch.content) }); });
+    return { files: files };
+  }
+
+  function rebuild(originalData, translatedChapters, translatedDescription) {
+    var desc = translatedDescription || originalData.description || '';
+    var f = generateEpub(originalData.title, originalData.author, desc, translatedChapters, originalData.coverBytes, originalData.coverExt);
+    return createZip(f.files);
+  }
+
+  function download(zipBytes, filename) {
+    var blob = new Blob([zipBytes], { type: 'application/epub+zip' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+  }
+
+  return { createZip: createZip, generateEpub: generateEpub, rebuild: rebuild, download: download };
+})();
+
+// ==================== TXTParser ====================
+var TXTParser = {
+  parse: async function(file) {
+    var text = await file.text();
+    var lines = text.split(/\r?\n/);
+    var title = '';
+    var chapters = [];
+    var currentTitle = '';
+    var currentContent = [];
+
+    // Extract title from first line: 【书名】
+    if (lines[0] && lines[0].startsWith('【') && lines[0].endsWith('】')) {
+      title = lines[0].replace(/^【|】$/g, '');
+      lines = lines.slice(1);
+    }
+
+    // Skip header lines (=====, 共N章, =====) until first chapter title
+    var startIdx = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      // Chapter title: not empty, not just separators, not "共 N 章", not "— 完 —"
+      if (line && !/^=+$/.test(line) && !/^共\s*\d+\s*章/.test(line) && line !== '— 完 —') {
+        // Check if next line is empty → this is a chapter title
+        if (i + 1 < lines.length && !lines[i + 1].trim()) {
+          startIdx = i;
+          break;
+        }
+      }
+    }
+
+    for (var i = startIdx; i < lines.length; i++) {
+      var line = lines[i].trim();
+      // Skip empty lines and separators
+      if (!line || /^=+$/.test(line) || /^共\s*\d+\s*章/.test(line)) continue;
+      if (line === '— 完 —') break;
+
+      // Check if this looks like a chapter title:
+      // - Not indented (no leading spaces in original)
+      // - Followed by empty line or content
+      var rawLine = lines[i];
+      var isIndented = rawLine.startsWith('　') || rawLine.startsWith('  ');
+
+      if (!isIndented && line.length > 0 && line.length < 100) {
+        // Could be a chapter title → save previous chapter
+        if (currentTitle && currentContent.length > 0) {
+          chapters.push({ title: currentTitle, content: this._joinContent(currentContent) });
+        }
+        currentTitle = line;
+        currentContent = [];
+      } else if (currentTitle) {
+        // Content line: remove leading indent
+        currentContent.push(line.replace(/^[　 ]+/, ''));
+      }
+    }
+    // Last chapter
+    if (currentTitle && currentContent.length > 0) {
+      chapters.push({ title: currentTitle, content: this._joinContent(currentContent) });
+    }
+
+    if (chapters.length === 0) throw new Error('未提取到有效章节，请确认 TXT 格式');
+
+    return {
+      title: title || 'Unknown',
+      author: '',
+      description: '',
+      chapters: chapters,
+      coverBytes: null,
+      coverExt: 'jpg',
+      filename: (title || 'output').replace(/[<>:"/\\|?*]/g, '_'),
+      format: 'txt'
+    };
+  },
+
+  _joinContent: function(lines) {
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+};
+
+// ==================== EPUBParser ====================
+var EPUBParser = {
+  parse: async function(file) {
+    var zip = await JSZip.loadAsync(file);
+    // Find container
+    var containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) throw new Error('无效 EPUB：缺少 META-INF/container.xml');
+    var containerXml = await containerFile.async('text');
+    var opfPath = this._extractOPFPath(containerXml);
+    if (!opfPath) throw new Error('无效 EPUB：container.xml 中未找到 rootfile');
+
+    // Read OPF
+    var opfFile = zip.file(opfPath);
+    if (!opfFile) throw new Error('无效 EPUB：未找到 ' + opfPath);
+    var opfXml = await opfFile.async('text');
+    var opfDir = opfPath.substring(0, opfPath.lastIndexOf('/') + 1);
+
+    var opfDoc = new DOMParser().parseFromString(opfXml, 'text/xml');
+    // Check for parse errors
+    if (opfDoc.querySelector('parsererror')) {
+      // Try as HTML
+      opfDoc = new DOMParser().parseFromString(opfXml, 'text/html');
+    }
+
+    // Metadata
+    var title = this._getText(opfDoc, 'title') || 'Unknown';
+    var author = this._getText(opfDoc, 'creator') || '';
+    var description = this._getText(opfDoc, 'description') || '';
+
+    // Cover
+    var coverId = '';
+    var metaEls = opfDoc.getElementsByTagName('meta');
+    for (var m = 0; m < metaEls.length; m++) {
+      if (metaEls[m].getAttribute('name') === 'cover') { coverId = metaEls[m].getAttribute('content'); break; }
+    }
+
+    // Manifest: id → { href, mediaType }
+    var manifest = {};
+    var items = opfDoc.getElementsByTagName('item');
+    for (var it = 0; it < items.length; it++) {
+      manifest[items[it].getAttribute('id')] = {
+        href: items[it].getAttribute('href'),
+        mediaType: items[it].getAttribute('media-type')
+      };
+    }
+
+    // Spine
+    var spineIds = [];
+    var spineItems = opfDoc.getElementsByTagName('itemref');
+    for (var si = 0; si < spineItems.length; si++) {
+      var idref = spineItems[si].getAttribute('idref');
+      if (idref && idref !== 'cover') spineIds.push(idref); // skip cover page
+    }
+
+    // Extract cover image
+    var coverBytes = null, coverExt = 'jpg';
+    if (coverId && manifest[coverId]) {
+      var coverPath = this._resolvePath(opfDir, manifest[coverId].href);
+      var coverFile = zip.file(coverPath);
+      if (coverFile) {
+        coverBytes = await coverFile.async('uint8array');
+        var mt = manifest[coverId].mediaType || '';
+        coverExt = mt.includes('png') ? 'png' : mt.includes('webp') ? 'webp' : 'jpg';
+      }
+    }
+
+    // Extract chapters
+    var chapters = [];
+    for (var sp = 0; sp < spineIds.length; sp++) {
+      var sid = spineIds[sp];
+      var item = manifest[sid];
+      if (!item) continue;
+      var chPath = this._resolvePath(opfDir, item.href);
+      var chFile = zip.file(chPath);
+      if (!chFile) continue;
+      var xhtml = await chFile.async('text');
+      var text = this._extractText(xhtml);
+      if (text.length > 20) {
+        // Try to find chapter title from the HTML
+        var chTitle = this._extractTitle(xhtml) || ('第' + (chapters.length + 1) + '章');
+        chapters.push({ title: chTitle, content: text });
+      }
+    }
+
+    if (chapters.length === 0) throw new Error('未提取到有效章节');
+
+    return { title: title, author: author, description: description, chapters: chapters, coverBytes: coverBytes, coverExt: coverExt, filename: title.replace(/[<>:"/\\|?*]/g, '_'), format: 'epub' };
+  },
+
+  _extractOPFPath: function(xml) {
+    var m = xml.match(/full-path\s*=\s*["']([^"']+)["']/i);
+    return m ? m[1] : null;
+  },
+
+  _getText: function(doc, tag) {
+    var els = doc.getElementsByTagName(tag);
+    if (els.length > 0) return els[0].textContent.trim();
+    // Try with dc: namespace
+    els = doc.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', tag);
+    if (els.length > 0) return els[0].textContent.trim();
+    return '';
+  },
+
+  _resolvePath: function(base, href) {
+    if (href.startsWith('/')) return href.substring(1);
+    return base + href;
+  },
+
+  _extractText: function(xhtml) {
+    var doc = new DOMParser().parseFromString(xhtml, 'text/html');
+    // Remove scripts, styles, headings (title is stored separately)
+    doc.querySelectorAll('script, style, nav, [role="doc-toc"], title, h1, h2, h3').forEach(function(el) { el.remove(); });
+    var body = doc.body;
+    if (!body) return '';
+    var text = body.textContent || '';
+    // Normalize
+    text = text.replace(/[ \t\r]+/g, ' ');
+    text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.replace(/ *\n */g, '\n');
+    return text.trim();
+  },
+
+  _extractTitle: function(xhtml) {
+    var doc = new DOMParser().parseFromString(xhtml, 'text/html');
+    // Try h1, h2, or title
+    var h = doc.querySelector('h1, h2, h3');
+    if (h) return h.textContent.trim();
+    var t = doc.querySelector('title');
+    if (t) return t.textContent.trim();
+    return '';
+  }
+};
+
+// ==================== TranslationEngine (from content.js) ====================
+var TranslationEngine = (function() {
+  var TRANSLATION_SYSTEM_PROMPT = '你是一个专业的日文→中文小说翻译助手。请将以下日文小说内容翻译成流畅、文学性的中文。\n\n要求：\n1. 保持原文的段落结构和换行\n2. 专有名词（人名、地名等）可选择音译或意译，但需保持全书一致\n3. 对话翻译要自然口语化\n4. 不要添加任何解释、注释或额外内容\n5. 使用中文标点符号\n6. 对拟声词/拟态词做恰当的中文表达\n7. 只输出译文，不要输出原文或任何标记';
+
+  function checkTranslationCompleteness(input, output) {
+    if (!output || output.length < 3) return { truncated: true, score: 0, reason: 'output too short' };
+    var inLen = Math.max(1, input.trim().length);
+    if (inLen < 200) return { truncated: false, score: 100, reason: '' };
+    var outLen = output.trim().length;
+    var ratio = outLen / inLen;
+    var lastChar = output.trim().slice(-1);
+    var naturalEndings = '。！？.!?」』")】…~…—';
+    var endsNaturally = naturalEndings.indexOf(lastChar) !== -1;
+    var lastSegment = output.trim().slice(-20);
+    var trailingOff = /[，、,]\s*$/.test(lastSegment) || /[とがをにではでへやからまで]\s*$/i.test(lastSegment);
+    var tooShort = inLen > 100 && ratio < 0.15;
+    var truncated = tooShort || trailingOff || (!endsNaturally && ratio < 0.3);
+    var score = Math.round(Math.min(ratio, 1) * 100);
+    return { truncated: truncated, score: score, reason: tooShort ? 'ratio too low' : (trailingOff ? 'trailing punctuation' : (!endsNaturally ? 'no ending mark' : '')) };
+  }
+
+  async function translateText(text, config) {
+    var apiKey = config.apiKey, apiEndpoint = config.apiEndpoint, model = config.model;
+    if (!apiKey) throw new Error('API Key 未配置');
+    var url = apiEndpoint || 'https://apihub.agnes-ai.com/v1/chat/completions';
+    var lastErr = '';
+    var isDeepSeek = /deepseek/i.test(model || '');
+
+    for (var attempt = 0; attempt < 8; attempt++) {
+      var controller = new AbortController();
+      var timeout = setTimeout(function() { controller.abort(); }, 180000);
+      try {
+        var body = {
+          model: model || 'agnes-2.0-flash',
+          messages: [
+            { role: 'system', content: config.systemPrompt || TRANSLATION_SYSTEM_PROMPT },
+            { role: 'user', content: text }
+          ],
+          temperature: 0.3
+        };
+        var maxTokens = isDeepSeek ? Math.max(8192, Math.min(Math.ceil(text.length * 2), 32768)) : 16384;
+        body.max_tokens = maxTokens;
+
+        var response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          if (response.status === 401) throw new Error('AUTH_FAILED');
+          var errText = '';
+          try { errText = await response.text(); } catch(e) {}
+          // 429/5xx: 限流或上游过载(OpenRouter 免费共享池常见) → 指数退避重试
+          var isLimit = response.status === 429 || (errText && /upstream_429|rate.?limit|retry.?after|访问量过大/i.test(errText));
+          var isServer = response.status >= 500;
+          if (isLimit || isServer) {
+            clearTimeout(timeout);
+            var ra = /retry_after_seconds["']?\s*[:=]\s*(\d+)/i.exec(errText);
+            var base = ra ? parseInt(ra[1], 10) : (isLimit ? 5 : 3);
+            var waitMs = Math.min(base * 1000 * Math.pow(2, attempt), 60000); // 指数退避, 上限60s
+            lastErr = 'API ' + response.status + ' 限流/过载 (重试' + (attempt + 1) + '次后放弃)';
+            App.log('⏳ ' + response.status + (isLimit ? '限流' : '过载') + '，' + (waitMs / 1000).toFixed(0) + 's 后重试 (' + (attempt + 1) + '/8)...', 'warn');
+            await App.sleep(waitMs);
+            continue;
+          }
+          throw new Error('API ' + response.status + (errText ? ': ' + errText.substring(0, 150) : ''));
+        }
+        var data = await response.json();
+        var translated = data.choices?.[0]?.message?.content;
+        if (!translated) throw new Error('Empty translation response');
+
+        // 检测 API 内容安全过滤（拒绝翻译），不再误判为"截断"重试
+        var REJECT_HINTS = ['无法翻译', '不能翻译', '拒绝翻译', '无法提供翻译', '无法协助', '内容安全', '安全规范', '不符合内容', '不适当', '不当内容', '违规内容', '抱歉，我无法', '很遗憾'];
+        var isReject = REJECT_HINTS.some(function(kw) { return translated.indexOf(kw) !== -1; });
+        if (isReject) {
+          App.log('⚠️ API 内容安全过滤（拒绝翻译）: ' + translated.substring(0, 120), 'warn');
+          throw new Error('CONTENT_REJECTED');
+        }
+
+        if (!config.skipCompleteness) {
+          var comp = checkTranslationCompleteness(text, translated);
+          if (comp.truncated) {
+            App.log('⚠️ 返回过短: 输入' + text.length + '字, 返回' + (translated || '').length + '字: ' + JSON.stringify((translated || '').substring(0, 200)), 'warn');
+            throw new Error('Translation truncated (' + comp.reason + ', score=' + comp.score + '%)');
+          }
+        }
+        return translated;
+      } catch (e) {
+        clearTimeout(timeout);
+        lastErr = e.message;
+        if (e.message === 'AUTH_FAILED') throw e;
+        if (e.message === 'CONTENT_REJECTED') throw e;
+        if (attempt >= 3) throw e;
+        await App.sleep(1000 * (attempt + 1));
+      }
+    }
+    throw new Error(lastErr || 'Translation failed after retry');
+  }
+
+  // 长文分段翻译：单次超长输入对免费 API（Agnes）易输出受限，按段分批翻译再拼接
+  async function translateLongText(text, config) {
+    var isDeepSeek = /deepseek/i.test((config.model || ''));
+    var paragraphs = text.split(/\n{2,}/);
+    var MAX_CHUNK = 1500;
+    var chunks = [], cur = '';
+    for (var i = 0; i < paragraphs.length; i++) {
+      var p = paragraphs[i];
+      if (cur && cur.length + p.length > MAX_CHUNK) { chunks.push(cur); cur = ''; }
+      cur += (cur ? '\n\n' : '') + p;
+    }
+    if (cur) chunks.push(cur);
+    if (chunks.length <= 1) return translateText(text, config);
+    var out = [];
+    for (var c = 0; c < chunks.length; c++) {
+      try {
+        var tr = await translateText(chunks[c], config);
+        out.push(tr && tr.length > 0 ? tr : chunks[c]);
+      } catch(e) { out.push(chunks[c]); }
+      if (c < chunks.length - 1) await App.sleep(isDeepSeek ? 0 : 3000);
+    }
+    return out.join('\n\n');
+  }
+
+  async function translateTitle(title, config) {
+    try {
+      var firstKey = (config.apiKey || '').split(',')[0].trim();
+      var tc = { apiKey: firstKey, apiEndpoint: config.apiEndpoint, model: config.model, systemPrompt: '将标题翻译为中文，只输出译文。忠实原文——原文有标点就保留，没有就不要添加。' };
+      var result = await translateText(title, tc);
+      var translated = result.trim();
+      if (!/[。！？.!?…~—]$/.test(title.trim())) {
+        translated = translated.replace(/[。！？.!?…~—]+$/, '');
+      }
+      if (translated && translated !== title) {
+        App.log('🌐 书名: ' + title + ' → ' + translated, 'info');
+        return translated;
+      }
+      return title;
+    } catch(e) {
+      App.log('⚠️ 书名翻译出错: ' + e.message, 'warn');
+      return title;
+    }
+  }
+
+  async function translateDescription(description, config) {
+    if (!description || !/[぀-ゟ゠-ヿ]/.test(description)) return description;
+    try {
+      var key = (config.apiKey || '').split(',')[0].trim();
+      var result = await translateText(description, { apiKey: key, apiEndpoint: config.apiEndpoint, model: config.model });
+      var translated = result.trim();
+      if (translated && translated !== description) {
+        App.log('🌐 简介翻译: ' + description.substring(0, 24) + (description.length > 24 ? '…' : '') + ' → ' + translated.substring(0, 24) + (translated.length > 24 ? '…' : ''), 'info');
+        return translated;
+      }
+      return description;
+    } catch(e) {
+      App.log('⚠️ 简介翻译出错: ' + e.message, 'warn');
+      return description;
+    }
+  }
+
+  async function translateTitles(chapters, apiKey, config) {
+    var titles = [];
+    chapters.forEach(function(ch) { if (ch && ch.title && ch.title.length > 0) titles.push(ch.title); });
+    if (titles.length === 0) return;
+
+    var list = titles.map(function(t, i) { return (i + 1) + '. ' + t; }).join('\n');
+    var prompt = 'Translate these Japanese novel chapter titles to Chinese. Return one per line in the same order, no numbering, no extra text:\n\n' + list;
+
+    try {
+      var result = await translateText(prompt, { apiKey: apiKey, apiEndpoint: config.apiEndpoint, model: config.model, skipCompleteness: true });
+      var translated = result.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+      var ti = 0;
+      chapters.forEach(function(ch) {
+        if (ch && ch.title && ch.title.length > 2 && ti < translated.length) { ch.title = translated[ti++]; }
+      });
+      App.log('🌐 标题翻译: ' + ti + '/' + titles.length, 'info');
+    } catch (e) {
+      App.log('⚠️ 标题翻译失败: ' + e.message, 'warn');
+    }
+  }
+
+  async function translateAllChapters(chapters, config) {
+    var keys = (config.apiKey || '').split(',').map(function(k) { return k.trim(); }).filter(Boolean);
+    if (keys.length === 0) { App.log('❌ API Key 未配置', 'error'); return { completed: 0, failed: chapters.length }; }
+
+    var total = chapters.length;
+    var isDeepSeek = /deepseek/i.test(config.model || '');
+    var rpm = isDeepSeek ? 10000 : 20;
+    var delayMs = isDeepSeek ? 0 : Math.ceil(60000 / rpm);
+    var workerCount = isDeepSeek ? Math.min(30, total) : Math.min(keys.length || 1, total);
+    var idx = 0, completed = 0, failed = 0, authFailed = false;
+
+    App.log('🌐 开始 AI 翻译 ' + total + ' 章 (' + (isDeepSeek ? workerCount + '并发 不限速' : workerCount + ' key × ~' + rpm + ' RPM') + ')', 'info');
+
+    // Phase 1: Batch translate titles
+    await translateTitles(chapters, keys[0], config);
+
+    // Phase 2: Parallel content translation
+    async function worker(keyIndex) {
+      var key = keys[keyIndex % keys.length] || keys[0];
+      var keyConfig = { apiKey: key, apiEndpoint: config.apiEndpoint, model: config.model };
+      while (idx < total && !App.abort && !authFailed) {
+        var i = idx++;
+        var ch = chapters[i];
+        if (!ch || !ch.content || ch.content.length < 50) { failed++; continue; }
+
+        var startTime = performance.now();
+        try {
+          ch.content = await translateText(ch.content, keyConfig);
+          completed++;
+          App.log('✅ [' + (completed + failed) + '/' + total + '] ' + ch.title + ' ← key#' + (keyIndex + 1), 'success');
+          App.updateProgress(completed + failed, total, ch.title);
+        } catch (e) {
+          if (e.message === 'AUTH_FAILED') { authFailed = true; App.log('❌ Key#' + (keyIndex + 1) + ' 无效，剩余跳过', 'error'); }
+          else { failed++; var em = e.message; if (/signal is aborted/i.test(em)) em = '请求超时(已重试)'; App.log('⚠️ [' + (completed + failed) + '/' + total + '] ' + ch.title + ': ' + em, 'warn'); }
+        }
+
+        if (!App.abort && !authFailed && !isDeepSeek) {
+          var elapsed = performance.now() - startTime;
+          await App.sleep(Math.max(200, delayMs - elapsed + Math.random() * 400));
+        }
+      }
+    }
+
+    var workers = [];
+    for (var w = 0; w < workerCount; w++) workers.push(worker(w));
+    await Promise.all(workers);
+
+    // Retry failed chapters
+    if (failed > 0 && !authFailed && !App.abort) {
+      var retryList = [];
+      for (var j = 0; j < chapters.length; j++) {
+        if (chapters[j] && chapters[j].content && chapters[j].content.length > 50 && /[぀-ゟ゠-ヿ]/.test(chapters[j].content.substring(0, 100))) {
+          retryList.push(j);
+        }
+      }
+      if (retryList.length > 0) {
+        App.log('🔄 重试 ' + retryList.length + ' 章翻译失败...', 'info');
+        for (var r = 0; r < retryList.length && !App.abort; r++) {
+          var ri = retryList[r];
+          try {
+            var translated = await translateText(chapters[ri].content, { apiKey: keys[0], apiEndpoint: config.apiEndpoint, model: config.model });
+            chapters[ri].content = translated;
+            failed--; completed++;
+            App.log('✅ [重试] ' + chapters[ri].title, 'success');
+            await App.sleep(2000);
+          } catch(e) {}
+        }
+      }
+    }
+
+    // 补翻残留日文：书名+标题+正文段落
+    if (!App.abort) {
+      // 补翻章节标题（还在日文的）
+      var titlesToFix = [];
+      chapters.forEach(function(ch, i) {
+        if (ch && ch.title && /[぀-ゟ゠-ヿ]/.test(ch.title)) titlesToFix.push({ index: i, title: ch.title });
+      });
+      if (titlesToFix.length > 0) {
+        var list = titlesToFix.map(function(item) { return (item.index + 1) + '. ' + item.title; }).join('\n');
+        var prompt = 'Translate these Japanese novel chapter titles to Chinese. Return one per line in the same order, no numbering, no extra text:\n\n' + list;
+        try {
+          var result = await translateText(prompt, { apiKey: keys[0], apiEndpoint: config.apiEndpoint, model: config.model, skipCompleteness: true });
+          var translated = result.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+          for (var t = 0; t < titlesToFix.length && t < translated.length; t++) {
+            chapters[titlesToFix[t].index].title = translated[t];
+          }
+          App.log('🔧 补翻标题: ' + Math.min(titlesToFix.length, translated.length) + '/' + titlesToFix.length, 'info');
+        } catch(e) {}
+      }
+      // 补翻正文日文段落
+      await repairResidues(chapters, config);
+    }
+
+    App.log('🌐 翻译完成: ' + completed + ' 成功, ' + failed + ' 失败', 'info');
+    return { completed: completed, failed: failed };
+  }
+
+  async function repairResidues(chapters, config) {
+    var key = (config.apiKey || '').split(',')[0].trim();
+    var repaired = 0;
+
+    for (var i = 0; i < chapters.length && !App.abort; i++) {
+      var ch = chapters[i];
+      if (!ch || !ch.content) continue;
+      if (!/[぀-ゟ゠-ヿ]/.test(ch.content)) continue;
+
+      var paragraphs = ch.content.split(/\n\n+/);
+      var hasChange = false;
+
+      for (var p = 0; p < paragraphs.length; p++) {
+        var para = paragraphs[p].trim();
+        if (!para || para.length < 10 || !/[぀-ゟ゠-ヿ]/.test(para)) continue;
+
+        try {
+          var translatedPara = await translateText(para, { apiKey: key, apiEndpoint: config.apiEndpoint, model: config.model });
+          if (translatedPara && translatedPara !== para) {
+            paragraphs[p] = translatedPara;
+            hasChange = true;
+          }
+        } catch(e) {}
+        await App.sleep(500);
+      }
+
+      if (hasChange) {
+        ch.content = paragraphs.join('\n\n');
+        repaired++;
+        App.log('🔧 补翻残留日文: ' + ch.title, 'info');
+      }
+    }
+
+    if (repaired > 0) App.log('🔧 补翻完成: ' + repaired + ' 章', 'info');
+  }
+
+  return { translateText: translateText, translateAllChapters: translateAllChapters, translateTitles: translateTitles, translateTitle: translateTitle, translateDescription: translateDescription, repairResidues: repairResidues };
+})();
+
+// ==================== TXT Output ====================
+function generateTxtContent(title, chapters) {
+  var o = '【' + title + '】\n' + '='.repeat(50) + '\n\n共 ' + chapters.length + ' 章\n' + '='.repeat(50) + '\n\n';
+  chapters.forEach(function(ch, i) {
+    var indented = (ch.content || '').replace(/(^|\n)([^\n])/g, '$1　　$2');
+    o += ch.title + '\n\n' + indented + '\n\n';
+  });
+  o += '— 完 —\n';
+  return o;
+}
+
+// ==================== UI Event Bindings ====================
+(function() {
+  // Upload
+  var dropZone = document.getElementById('dropZone');
+  var fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('click', function() { fileInput.click(); });
+  dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+  dropZone.addEventListener('drop', function(e) { e.preventDefault(); dropZone.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
+  fileInput.addEventListener('change', function() { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  async function handleFile(file) {
+    var isEPUB = file.name.toLowerCase().endsWith('.epub');
+    var isTXT = file.name.toLowerCase().endsWith('.txt');
+    if (!isEPUB && !isTXT) { App.log('⚠️ 请选择 .epub 或 .txt 文件', 'warn'); return; }
+    App.translatedDescription = null;
+    App.setState('parsing');
+    App.log('📦 解析' + (isEPUB ? ' EPUB' : ' TXT') + ': ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(1) + ' MB)...', 'info');
+    try {
+      App.epubData = isEPUB ? await EPUBParser.parse(file) : await TXTParser.parse(file);
+      document.getElementById('bookTitle').textContent = '《' + App.epubData.title + '》';
+      document.getElementById('bookMeta').textContent = (App.epubData.author ? '作者：' + App.epubData.author + ' · ' : '') + App.epubData.chapters.length + ' 章';
+      document.getElementById('bookCard').style.display = 'block';
+      // Show cover if available
+      if (App.epubData.coverBytes) {
+        var canvas = document.getElementById('coverCanvas');
+        var blob = new Blob([App.epubData.coverBytes], { type: 'image/' + (App.epubData.coverExt === 'png' ? 'png' : 'jpeg') });
+        var img = new Image();
+        img.onload = function() {
+          var ctx = canvas.getContext('2d');
+          canvas.width = img.width; canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+        };
+        img.src = URL.createObjectURL(blob);
+      }
+      App.setState('ready');
+      App.log('✅ 解析完成: ' + App.epubData.chapters.length + ' 章', 'success');
+      document.getElementById('translateBtn').disabled = false;
+      // Show cover for EPUB, hide for TXT
+      document.getElementById('coverCanvas').style.display = App.epubData.format === 'txt' ? 'none' : '';
+    } catch(e) {
+      App.log('❌ 解析失败: ' + e.message, 'error');
+      App.setState('idle');
+    }
+  }
+  document.getElementById('configToggle').addEventListener('click', function() {
+    document.getElementById('configBody').classList.toggle('show');
+  });
+
+  // Preset buttons
+  document.querySelectorAll('.preset-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { ConfigManager.applyPreset(btn.dataset.id); });
+  });
+
+  // Save on input change
+  ['apiKey', 'apiEndpoint', 'apiModel'].forEach(function(id) {
+    document.getElementById(id).addEventListener('change', function() { ConfigManager.save(); });
+  });
+
+  // Translate
+  document.getElementById('translateBtn').addEventListener('click', async function() {
+    var config = ConfigManager.get();
+    if (!config.apiKey) { App.log('❌ 请先配置 API Key', 'error'); return; }
+    if (!App.epubData || !App.epubData.chapters.length) { App.log('❌ 请先上传 EPUB 文件', 'error'); return; }
+
+    App.setState('translating');
+    App.abort = false;
+    App.done = 0; App.total = App.epubData.chapters.length;
+
+    // Deep clone chapters for translation
+    App.translatedChapters = App.epubData.chapters.map(function(ch) {
+      return { title: ch.title, content: ch.content };
+    });
+
+    try {
+      var result = await TranslationEngine.translateAllChapters(App.translatedChapters, config);
+      if (!App.abort) {
+        // Translate book title
+        var translatedTitle = await TranslationEngine.translateTitle(App.epubData.title, config);
+        App.epubData.title = translatedTitle;
+        App.epubData.filename = translatedTitle.replace(/[<>:"/\\|?*]/g, '_');
+        document.getElementById('bookTitle').textContent = '《' + translatedTitle + '》';
+        // Translate description (简介)
+        App.translatedDescription = await TranslationEngine.translateDescription(App.epubData.description || '', config);
+        App.setState('done');
+        App.log('✅ 全部完成！可以下载译文', 'success');
+      }
+    } catch(e) {
+      App.log('❌ 翻译异常: ' + e.message, 'error');
+      App.setState('ready');
+    }
+  });
+
+  // Abort
+  document.getElementById('abortBtn').addEventListener('click', function() {
+    App.abort = true;
+    App.log('⏹ 已请求停止...', 'warn');
+  });
+
+  // Repair
+  document.getElementById('repairBtn').addEventListener('click', async function() {
+    if (!App.epubData || !App.epubData.chapters.length) return;
+    var config = ConfigManager.get();
+    if (!config.apiKey) { App.log('❌ 请先配置 API Key', 'error'); return; }
+    // 如果还没翻译过，先拷贝原文
+    if (!App.translatedChapters) {
+      App.translatedChapters = App.epubData.chapters.map(function(ch) {
+        return { title: ch.title, content: ch.content };
+      });
+    }
+    App.setState('translating');
+    App.abort = false;
+    try {
+      // 1. 补翻书名
+      App.log('🔧 补翻书名: ' + App.epubData.title, 'info');
+      try {
+        var newTitle = await TranslationEngine.translateTitle(App.epubData.title, config);
+        App.log('🔧 书名结果: ' + newTitle, newTitle !== App.epubData.title ? 'success' : 'warn');
+        if (newTitle !== App.epubData.title) {
+          App.epubData.title = newTitle;
+          App.epubData.filename = newTitle.replace(/[<>:"/\\|?*]/g, '_');
+          document.getElementById('bookTitle').textContent = '《' + newTitle + '》';
+        }
+      } catch(e) {
+        App.log('❌ 书名补翻失败: ' + e.message, 'error');
+      }
+      // 1.5 补翻简介
+      if (App.epubData.description) {
+        App.log('🔧 补翻简介...', 'info');
+        try {
+          var descSrc = App.translatedDescription || App.epubData.description;
+          var newDesc = await TranslationEngine.translateDescription(descSrc, config);
+          if (newDesc && newDesc !== descSrc) App.log('🔧 简介已更新', 'success');
+          App.translatedDescription = newDesc;
+        } catch(e) { App.log('⚠️ 简介补翻失败: ' + e.message, 'warn'); }
+      }
+      // 2. 补翻章节标题
+      var titlesToFix = [];
+      App.translatedChapters.forEach(function(ch, i) {
+        if (ch && ch.title && /[぀-ゟ゠-ヿ]/.test(ch.title)) titlesToFix.push({ index: i, title: ch.title });
+      });
+      if (titlesToFix.length > 0) {
+        // Batch translate using same approach as translateTitles
+        var list = titlesToFix.map(function(item) { return (item.index + 1) + '. ' + item.title; }).join('\n');
+        var prompt = 'Translate these Japanese novel chapter titles to Chinese. Return one per line in the same order, no numbering, no extra text:\n\n' + list;
+        try {
+          var key = (config.apiKey || '').split(',')[0].trim();
+          var result = await TranslationEngine.translateText(prompt, { apiKey: key, apiEndpoint: config.apiEndpoint, model: config.model, skipCompleteness: true });
+          var translated = result.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+          for (var t = 0; t < titlesToFix.length && t < translated.length; t++) {
+            App.translatedChapters[titlesToFix[t].index].title = translated[t];
+            App.log('🔧 补翻标题: ' + titlesToFix[t].title + ' → ' + translated[t], 'info');
+          }
+        } catch(e) { App.log('⚠️ 补翻标题失败: ' + e.message, 'warn'); }
+      }
+      // 3. 补翻正文日文段落
+      await TranslationEngine.repairResidues(App.translatedChapters, config);
+    } catch(e) {
+      App.log('❌ 补翻异常: ' + e.message, 'error');
+    }
+    App.setState('done');
+  });
+
+  // Download
+  document.getElementById('downloadBtn').addEventListener('click', function() {
+    if (!App.translatedChapters || !App.epubData) return;
+    try {
+      var isTXT = App.epubData.format === 'txt';
+      var filename = App.epubData.filename + '_译文.' + (isTXT ? 'txt' : 'epub');
+      if (isTXT) {
+        var txtContent = generateTxtContent(App.epubData.title, App.translatedChapters);
+        var blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+        App.log('📥 下载: ' + filename + ' (' + (txtContent.length / 1024).toFixed(0) + ' KB)', 'success');
+      } else {
+        App.log('📦 打包 EPUB...', 'info');
+        var zipBytes = EpubRebuilder.rebuild(App.epubData, App.translatedChapters, App.translatedDescription);
+        EpubRebuilder.download(zipBytes, filename);
+        App.log('📥 下载: ' + filename + ' (' + (zipBytes.length / 1024 / 1024).toFixed(1) + ' MB)', 'success');
+      }
+    } catch(e) {
+      App.log('❌ 打包失败: ' + e.message, 'error');
+    }
+  });
+
+  // Init
+  ConfigManager.load();
+  App.log('✅ 就绪，请上传 EPUB 文件', 'info');
+})();
+</script>
+</body>
+</html>
